@@ -1,205 +1,228 @@
-﻿using System;
+﻿using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.Data.SqlClient;
+using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
+using WebApplication1.DTOs.Req;
+using WebApplication1.DTOs.Res;
+using WebApplication1.Exceptions;
+using WebApplication1.Helpers;
 using WebApplication1.Models;
 
 namespace WebApplication1.Services
 {
-    public class DbService : IDbService
+    public class DbService :IDbService
     {
-        private static string connectionString = 
-            "Data Source=db-mssql16.pjwstk.edu.pl;Initial Catalog=2019SBD;Integrated Security=True";
-        static int counterId = 0;
 
-        //private List<Animal> animalList;
+        private readonly MainDbContext _context;
+        private readonly IConfiguration _configuration;
 
-        public void Db()
+        public DbService(MainDbContext mainDbContext,IConfiguration configuration)
         {
-           // animalList = new();
-            var sql = "select * from animal;";
-
-            using (var conn = new SqlConnection(connectionString))
-            using (var cmd = new SqlCommand(sql, conn))
-            {
-                conn.Open();
-                var dr = cmd.ExecuteReader();
-                while (dr.Read())
-                {
-                    counterId++;
-                }
-            }
+            _context = mainDbContext;
+            _configuration = configuration;
         }
 
-        public bool AddAnimal(Animal animal)
+        public async Task<IEnumerable<GetDoctorRes>> GetDoctors()
         {
-            if (!AnimalExists(animal))
-                return false;
-          
-            using (var conn = new SqlConnection(connectionString))
-            using (var cmd = new SqlCommand())
-            {
-                cmd.Parameters.AddWithValue("@name", animal.Name);
-                cmd.Parameters.AddWithValue("@description", animal.Description);
-                cmd.Parameters.AddWithValue("@area", animal.Area);
-                cmd.Parameters.AddWithValue("@category", animal.Category);
-                cmd.Connection = conn;
-                cmd.CommandText = $"insert into Animal(Name, Description, Category, Area)" +
-                    $" values(@name,@description,@category,@area);";
-                conn.Open();
-                Console.WriteLine(cmd.ExecuteNonQuery());
+            return  _context.Doctors.Select(
+                s=>new GetDoctorRes
+            { 
+                IdDoctor = s.IdDoctor,
+                FirstName = s.FirstName,
+                LastName = s.LastName,
+                Email = s.Email
+            });
+        }
+        public async Task<bool> AddDoctor(AddDoctorReq doctor)
+        {
 
-            }
+            try
+            {
+                var doctorTmp = new Doctor
+                {
+                    FirstName = doctor.FirstName,
+                    LastName = doctor.LastName,
+                    Email = doctor.Email,
+                };
+                if (_context.Doctors.Where(s => (s.FirstName == doctor.FirstName) && (s.Email == doctor.Email) && (s.LastName == doctor.LastName)).Any())
+                    throw new Exception();
+                await _context.AddAsync(doctorTmp);               
+                await _context.SaveChangesAsync();
                 return true;
-        }
-
-       
-
-        public List<Animal> GetAnimal()
-        {
-            var animalList = new List<Animal>();
-            var sql = "select * from animal order by name ASC;";
-
-            using (var conn = new SqlConnection(connectionString))
-            using (var cmd = new SqlCommand(sql, conn))
-            {
-
-                conn.Open();
-                var dr = cmd.ExecuteReader();
-                while (dr.Read())
-                {
-                    
-                    animalList.Add(new Animal
-                    {
-                        Name = (dr["Name"].ToString()),
-                        Description = (dr["Description"].ToString()),
-                        Category = (dr["Category"].ToString()),
-                        Area = (dr["Area"].ToString())
-                    }) ; 
-                }
             }
-            return animalList;
-        }
-
-        public List<Animal> GetAnimalQuery(string query)
-        {
-            var animalList = new List<Animal>();
-                      using (var conn = new SqlConnection(connectionString))
-            using (var cmd = new SqlCommand())
+            catch (Exception)
             {
-
-                cmd.Parameters.AddWithValue("@query", query);
-                cmd.Connection = conn;
-                cmd.CommandText = "select * from animal order by @query ASC;";
-                conn.Open();
-                var dr = cmd.ExecuteReader();
-                while (dr.Read())
-                {
-                    animalList.Add(new Animal
-                    {
-                        Name = (dr["Name"].ToString()),
-                        Description = (dr["Description"].ToString()),
-                        Category = (dr["Category"].ToString()),
-                        Area = (dr["Area"].ToString())
-                    });
-                }
-            }
-            return animalList;
-        }
-
-        public bool ModifyAnimal(Animal animal,int id)
-        {
-            var animalList = new List<Animal>();
-            if (!AnimalExists(animal))
                 return false;
-            
-            Animal tmpAnimal = null;
-            using (var conn = new SqlConnection(connectionString))
-            using (var cmd = new SqlCommand())
-            {
-                cmd.Parameters.AddWithValue("@id", id);
-                cmd.Connection = conn;
-                cmd.CommandText = $"select * from animal where IdAnimal = @id";
-                conn.Open();
-                var dr = cmd.ExecuteReader();
-                while (dr.Read())
-                {
-                    tmpAnimal = new Animal
-                    {
-                        Name = (dr["Name"].ToString()),
-                        Description = (dr["Description"].ToString()),
-                        Category = (dr["Category"].ToString()),
-                        Area = (dr["Area"].ToString())
-                    };
-                }
             }
-            if (tmpAnimal.Equals(null))
-                return false;
-
-            using (var conn = new SqlConnection(connectionString))
-            using (var cmd = new SqlCommand())
-            {
-                cmd.Parameters.AddWithValue("@name", animal.Name);
-                cmd.Parameters.AddWithValue("@description", animal.Description);
-                cmd.Parameters.AddWithValue("@area", animal.Area);
-                cmd.Parameters.AddWithValue("@category", animal.Category);
-                cmd.Parameters.AddWithValue("@id", id);
-                cmd.Connection = conn;
-                cmd.CommandText = $"UPDATE animal SET Name=@name,Description=@description," +
-              $"Area=@area,Category=@category WHERE IdAnimal = @id; ";
-                conn.Open();
-                cmd.ExecuteNonQuery();
-            }
-            return true;
         }
 
-        public bool DeleteAnimal(int id)
+        public async Task<bool> DeleteDoctor(int id)
         {
-            int flag;
-            using (var conn = new SqlConnection(connectionString))
-            using (var cmd = new SqlCommand())
+            try
             {
-                cmd.Parameters.AddWithValue("@id", id);
-                cmd.Connection = conn;
-                cmd.CommandText = $"DELETE FROM ANIMAL WHERE IdAnimal = @id;";
-                conn.Open();
-                flag = cmd.ExecuteNonQuery();               
-            }
-            if (flag == 0)
-                return false;
-            return true;
+                var doctor = _context.Doctors.Where(s => s.IdDoctor == id).Single();
+                if (doctor == null)
+                    throw new NoDoctorWithIdException("Doctor with this id does not exist");
+                if (!_context.Prescriptions.Any())
+                {
+                    _context.Doctors.Remove(doctor);
+                    return true;
+                }
 
+                var prescriptions = _context.Prescriptions.Where(s => s.IdDoctor == id).ToList();
+                foreach (var prescription in prescriptions)
+                {
+                    _context.Prescriptions.Remove(prescription);
+                    if (_context.Prescriptions_Medicaments.Any())
+                    {
+                        var PrescriptionsMedicaments = _context.Prescriptions_Medicaments.Where(e => e.IdPrescription == prescription.IdPrescription);
+                        if (PrescriptionsMedicaments != null && PrescriptionsMedicaments.Any())
+                        {
+                            foreach (var pre_Med in PrescriptionsMedicaments)
+                                _context.Remove(pre_Med);
+                        }
+                    }
+                }
+                _context.Doctors.Remove(doctor);
+                await _context.SaveChangesAsync();
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
-        public bool AnimalExists(Animal animal)
+        public async Task<bool> ModifyDoctor(ModifyDoctorReq modifyDoctorReq, int id)
         {
-            var animalList = new List<Animal>();
-            var sql = "select * from animal;";
-
-            using (var conn = new SqlConnection(connectionString))
-            using (var cmd = new SqlCommand(sql, conn))
+            Doctor doctorToModify = _context.Doctors.Where(s => s.IdDoctor == id).Single();
+            if (doctorToModify == null)      
+               throw new NoDoctorWithIdException("Doctor with this id does not exist");
+            try
             {
-                conn.Open();
-                var dr = cmd.ExecuteReader();
-                while (dr.Read())
+                doctorToModify.FirstName = modifyDoctorReq.FirstName;
+                doctorToModify.LastName = modifyDoctorReq.LastName;
+                doctorToModify.Email = modifyDoctorReq.Email;
+                await _context.SaveChangesAsync();
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }          
+        }
+
+        public async Task<GetPrescriptionRes> GetPrescription(int id)
+        {
+            try
+            {
+                Prescription prescription = _context.Prescriptions.Where(s => s.IdPrescription == id).Single();
+                Patient patient = _context.Patients.Where(s => prescription.IdPatient == s.IdPatient).Single();
+                Doctor doctor = _context.Doctors.Where(s => prescription.IdDoctor == s.IdDoctor).Single();
+                List<Prescription_Medicament> medicaments = _context.Prescriptions_Medicaments.Where(s => s.IdPrescription == prescription.IdPrescription).ToList();
+                List<Medicament> medicamentList = new();
+
+                foreach (Prescription_Medicament m in medicaments)
                 {
-
-                    animalList.Add(new Animal
-                    {
-                        Name = (dr["Name"].ToString()),
-                        Description = (dr["Description"].ToString()),
-                        Category = (dr["Category"].ToString()),
-                        Area = (dr["Area"].ToString())
-                    });
+                    medicamentList.Add(_context.Medicaments.Where(s => s.IdMedicament == m.IdMedicament).Single());
                 }
+
+                return new GetPrescriptionRes
+                {
+                    IdPrescription = prescription.IdPrescription,
+                    IdPatient = patient.IdPatient,
+                    FirstNamePatient = patient.FirstName,
+                    LastNamePatient = patient.LastName,
+                    BirthDatePatient = patient.BirthDate,
+                    IdDoctor = doctor.IdDoctor,
+                    FirstNameDoctor = doctor.FirstName,
+                    LastNameDoctor = doctor.LastName,
+                    EmailDoctor = doctor.Email,
+                    Medicaments = medicamentList
+                };
             }
-            foreach (Animal a in animalList)
+            catch (Exception)
             {
-                if (a.Name == animal.Name && a.Description == animal.Description && a.Category == animal.Category && a.Area == animal.Area)
-                    return false;
+                return null;
             }
-            return true;
+        }
+
+        public async Task<Tuple<bool,object>> Login(LoginRequest request)
+        {
+           User user = _context.Users.Where(u => u.Login == request.Login).FirstOrDefault();
+
+            string passwordHash = user.Password;
+            string curHashedPassword = SecurityHelpers.GetHashedPasswordWithSalt(request.Password, user.Salt);
+
+            if (passwordHash != curHashedPassword)
+            {
+                return new (false,null);
+            }
+
+            SymmetricSecurityKey key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["SecretKey"]));
+            SigningCredentials creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            JwtSecurityToken token = new JwtSecurityToken(
+                issuer: "https://localhost:44324",
+                audience: "https://localhost:44324",
+                claims: null,
+                expires: DateTime.Now.AddMinutes(10),
+                signingCredentials: creds
+                );
+            user.RefreshToken = SecurityHelpers.GenerateRefreshToken();
+            user.RefreshTokenExp = DateTime.Now.AddDays(1);
+            await _context.SaveChangesAsync();
+
+            return  new (true,new
+            {
+                accessToken = new JwtSecurityTokenHandler().WriteToken(token),
+                refreshToken = user.RefreshToken
+            });
+        }
+
+        public async Task<Tuple<bool, object>> RefreshToken(string token, RefreshToken refreshToken)
+        {
+            User user = _context.Users.Where(u => u.RefreshToken == refreshToken.Token).FirstOrDefault();
+            if (user == null)
+            {
+                throw new SecurityTokenException("Invalid refresh token");
+            }
+
+            if (user.RefreshTokenExp < DateTime.Now)
+            {
+                throw new SecurityTokenException("Refresh token expired");
+            }
+
+            var login = SecurityHelpers.GetUserIdFromAccessToken(token.Replace("Bearer ", ""), _configuration["SecretKey"]);
+
+
+
+            SymmetricSecurityKey key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["SecretKey"]));
+
+            SigningCredentials creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            JwtSecurityToken jwtToken = new JwtSecurityToken(
+                issuer: "https://localhost:44324",
+                audience: "https://localhost:44324",
+                claims: null,
+                expires: DateTime.Now.AddMinutes(10),
+                signingCredentials: creds
+            );
+
+            user.RefreshToken = SecurityHelpers.GenerateRefreshToken();
+            user.RefreshTokenExp = DateTime.Now.AddDays(1);
+            await _context.SaveChangesAsync();
+
+            return new (true ,new
+            {
+                accessToken = new JwtSecurityTokenHandler().WriteToken(jwtToken),
+                refreshToken = user.RefreshToken
+            });
         }
     }
 }
